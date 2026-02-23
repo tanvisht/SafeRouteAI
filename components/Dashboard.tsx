@@ -12,6 +12,7 @@ const Dashboard: React.FC = () => {
   const [safetyScore, setSafetyScore] = useState<number | null>(null);
   const [narrative, setNarrative] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSignOut = () => {
     auth.signOut();
@@ -21,12 +22,15 @@ const Dashboard: React.FC = () => {
     setRoute(details);
     setAppState(AppState.ROUTE_CONFIRMED);
     setIsGenerating(true);
+    setError(null);
 
     try {
-      const response = await fetch('https://8080-cs-159935604833-default.cs-us-east1-pkhd.cloudshell.dev/process_route', {
+      // THIS IS THE UPDATED TUNNEL URL AND HEADER
+      const response = await fetch('https://cruel-birds-cheer.loca.lt/process_route', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Bypass-Tunnel-Reminder': 'true' 
         },
         body: JSON.stringify({
           origin: details.startAddress,
@@ -39,21 +43,22 @@ const Dashboard: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        // Support both camelCase and snake_case from backend
         setSafetyScore(data.safety_score ?? data.safetyScore);
         setNarrative(data.narrative);
         setAppState(AppState.READY_TO_PLAY);
       } else {
-        console.error("Backend error:", response.statusText);
+        const errorText = await response.text();
+        console.error("Backend error:", response.status, errorText);
+        setError(`Backend Error (${response.status}): ${errorText || response.statusText}`);
       }
-    } catch (error) {
-      console.error("Error processing route:", error);
+    } catch (err: any) {
+      console.error("Error processing route:", err);
+      setError(`Connection Failed: ${err.message || 'Could not connect to the safety analysis engine.'}`);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // Construct a story object for the StoryPlayer if narrative exists
   const story: AudioStory | null = narrative ? {
     totalSegmentsEstimate: 1,
     outline: ["Safety Analysis"],
@@ -66,10 +71,8 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-editorial-100">
-      {/* Fixed Map Background */}
       <MapBackground route={route} />
 
-      {/* Header with Sign Out */}
       <div className="absolute top-0 left-0 right-0 p-6 flex justify-end z-50">
         <button
           onClick={handleSignOut}
@@ -80,7 +83,6 @@ const Dashboard: React.FC = () => {
         </button>
       </div>
 
-      {/* Main Content Overlay */}
       <main className="relative z-10 container mx-auto px-4 py-20 flex items-center justify-center min-h-screen">
         <div className="w-full max-w-5xl">
           {!narrative ? (
@@ -101,15 +103,49 @@ const Dashboard: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {error && (
+                <div className="mt-8 max-w-md mx-auto animate-fade-in">
+                  <div className="bg-red-50 border border-red-200 p-4 rounded-2xl flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-red-600 font-bold">
+                      <span className="text-sm uppercase tracking-widest">Analysis Failed</span>
+                    </div>
+                    <p className="text-red-500 text-sm leading-relaxed">
+                      {error}
+                    </p>
+                    <button 
+                      onClick={() => setError(null)}
+                      className="text-red-600 text-[10px] uppercase tracking-widest font-bold hover:underline mt-2 self-start"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             route && story && (
-              <StoryPlayer 
-                story={story}
-                route={route}
-                onSegmentChange={() => {}}
-                isBackgroundGenerating={false}
-              />
+              <div className="animate-fade-in space-y-8">
+                {/* Custom Card to clearly show the Safety Score and Gemini Text */}
+                <div className="bg-white/90 backdrop-blur-md p-8 rounded-3xl shadow-2xl border border-stone-200 max-w-3xl mx-auto mt-12">
+                   <div className="flex items-center justify-between mb-6 border-b pb-4">
+                      <h2 className="text-2xl font-serif text-editorial-900">Route Safety Analysis</h2>
+                      <div className={`px-4 py-2 rounded-full font-bold text-white ${safetyScore && safetyScore > 70 ? 'bg-green-500' : 'bg-amber-500'}`}>
+                         Score: {safetyScore}/100
+                      </div>
+                   </div>
+                   <p className="text-lg text-stone-700 leading-relaxed font-serif">
+                      {narrative}
+                   </p>
+                </div>
+                
+                <StoryPlayer 
+                  story={story}
+                  route={route}
+                  onSegmentChange={() => {}}
+                  isBackgroundGenerating={false}
+                />
+              </div>
             )
           )}
         </div>
