@@ -25,12 +25,18 @@ const Dashboard: React.FC = () => {
     setError(null);
 
     try {
-      // THIS IS THE UPDATED TUNNEL URL AND HEADER
-      const response = await fetch('https://cruel-birds-cheer.loca.lt/process_route', {
+      console.log("Sending request to backend with details:", details);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+      const response = await fetch('https://82b0ef17480439.lhr.life/process_route', {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
-          'Bypass-Tunnel-Reminder': 'true' 
+          'Bypass-Tunnel-Reminder': 'true',
+          'Accept': 'application/json'
         },
         body: JSON.stringify({
           origin: details.startAddress,
@@ -41,19 +47,31 @@ const Dashboard: React.FC = () => {
         }),
       });
 
+      clearTimeout(timeoutId);
+
       if (response.ok) {
         const data = await response.json();
-        setSafetyScore(data.safety_score ?? data.safetyScore);
+        console.log("Backend response received:", data);
+        
+        if (!data.narrative) {
+          throw new Error("The safety engine returned an empty analysis. Please try a different route.");
+        }
+
+        setSafetyScore(data.safety_score ?? data.safetyScore ?? 0);
         setNarrative(data.narrative);
         setAppState(AppState.READY_TO_PLAY);
       } else {
         const errorText = await response.text();
-        console.error("Backend error:", response.status, errorText);
-        setError(`Backend Error (${response.status}): ${errorText || response.statusText}`);
+        console.error("Backend error status:", response.status, errorText);
+        setError(`Safety Engine Error (${response.status}): ${errorText || 'The server encountered an issue.'}`);
       }
     } catch (err: any) {
-      console.error("Error processing route:", err);
-      setError(`Connection Failed: ${err.message || 'Could not connect to the safety analysis engine.'}`);
+      console.error("Fetch error:", err);
+      if (err.name === 'AbortError') {
+        setError("The request timed out. Please ensure your backend server is running and the tunnel is active.");
+      } else {
+        setError(`Connection Failed: ${err.message || 'Could not connect to the safety analysis engine.'}`);
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -130,8 +148,20 @@ const Dashboard: React.FC = () => {
                 <div className="bg-white/90 backdrop-blur-md p-8 rounded-3xl shadow-2xl border border-stone-200 max-w-3xl mx-auto mt-12">
                    <div className="flex items-center justify-between mb-6 border-b pb-4">
                       <h2 className="text-2xl font-serif text-editorial-900">Route Safety Analysis</h2>
-                      <div className={`px-4 py-2 rounded-full font-bold text-white ${safetyScore && safetyScore > 70 ? 'bg-green-500' : 'bg-amber-500'}`}>
-                         Score: {safetyScore}/100
+                      <div className="flex items-center gap-3">
+                        <button 
+                          onClick={() => {
+                            setNarrative(null);
+                            setSafetyScore(null);
+                            setAppState(AppState.PLANNING);
+                          }}
+                          className="text-[10px] uppercase tracking-widest font-bold text-stone-400 hover:text-editorial-900 transition-colors"
+                        >
+                          New Analysis
+                        </button>
+                        <div className={`px-4 py-2 rounded-full font-bold text-white ${safetyScore && safetyScore > 70 ? 'bg-green-500' : 'bg-amber-500'}`}>
+                           Score: {safetyScore}/100
+                        </div>
                       </div>
                    </div>
                    <p className="text-lg text-stone-700 leading-relaxed font-serif">
